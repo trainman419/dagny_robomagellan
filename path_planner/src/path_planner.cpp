@@ -37,8 +37,6 @@
 #include <ros/ros.h>
 #include <tf/tf.h>
 
-#include <global_map/Location.h>
-#include <goal_list/Goal.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Path.h>
