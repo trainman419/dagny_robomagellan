@@ -11,11 +11,6 @@
 #include <vector>
 
 #include <ros/ros.h>
-#include <global_map/Location.h>
-#include <global_map/Offset.h>
-
-#include <goal_list/Goal.h>
-#include <goal_list/GoalList.h>
 
 #include <geometry_msgs/Point.h>
 #include <sensor_msgs/NavSatFix.h>
@@ -24,7 +19,6 @@
 
 using namespace std;
 
-//vector<global_map::Location> * goals;
 vector<sensor_msgs::NavSatFix> * goals;
 unsigned int current_goal;
 
