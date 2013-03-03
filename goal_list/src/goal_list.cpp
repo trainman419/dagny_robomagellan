@@ -15,6 +15,8 @@
 #include <geometry_msgs/Point.h>
 #include <sensor_msgs/NavSatFix.h>
 
+#include <hardware_interface/Goal.h>
+
 #include <nav_msgs/Odometry.h>
 
 using namespace std;
@@ -26,16 +28,58 @@ bool loop = false;
 
 // publisher for current goal
 ros::Publisher goal_pub;
+ros::Publisher goal_update_pub;
 
 geometry_msgs::Point last_odom;
    
-void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
-   ROS_INFO("Got position update");
+bool active = false;
 
+void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
+   //ROS_INFO("Got position update");
    last_odom = msg->pose.pose.position;
 }
 
-bool active = false;
+void sendCurrentGoalUpdate() {
+   hardware_interface::Goal g;
+   g.operation = hardware_interface::Goal::SET_CURRENT;
+   g.id = current_goal;
+   goal_update_pub.publish(g);
+}
+
+void goalInputCallback(const hardware_interface::Goal::ConstPtr & goal) {
+   switch(goal->operation) {
+      case hardware_interface::Goal::APPEND:
+         goals->push_back(goal->goal);
+         // re-activate if we're inactive
+         active = true;
+         sendCurrentGoalUpdate();
+         break;
+      case hardware_interface::Goal::DELETE:
+         {
+            ROS_INFO("Removing goal at %d", goal->id);
+
+            vector<sensor_msgs::NavSatFix>::iterator itr = goals->begin();
+            int id = goal->id;
+            while( id ) {
+               ++itr;
+               id--;
+            }
+            goals->erase(itr);
+            if( current_goal > goal->id )
+               current_goal--;
+            if( goals->size() > 0 ) {
+               sendCurrentGoalUpdate();
+            } else {
+               ROS_INFO("No goals; deactivating");
+               active = false;
+            }
+         }
+         break;
+      default:
+         ROS_ERROR("Unimplemented goal list operation: %d", goal->operation);
+         break;
+   }
+}
 
 // Radius of earth in m
 #define R 6371000
@@ -142,7 +186,9 @@ int main(int argc, char ** argv) {
 
    ros::Subscriber odom = n.subscribe("odom", 2, odomCallback);
    ros::Subscriber gps = n.subscribe("gps", 2, gpsCallback);
+   ros::Subscriber goal_input = n.subscribe("goal_input", 10, goalInputCallback);
    goal_pub = n.advertise<geometry_msgs::Point>("current_goal", 10);
+   goal_update_pub = n.advertise<hardware_interface::Goal>("goal_updates", 10);
 
    ROS_INFO("Goal List ready");
 
