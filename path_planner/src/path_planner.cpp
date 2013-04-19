@@ -60,7 +60,6 @@ double goal_err = 0.3;
 // how close we are before we switch to cone mode (m)
 double cone_dist = 6.0;
 
-// TODO: enable/disable for cone mode
 
 // map resolution, in meters per pixel
 // TODO: convert to parameter
@@ -79,6 +78,16 @@ double max_accel = 0.3;
 // planner timeouts
 double backup_time = 6.0;
 double stuck_timeout = 2.0;
+
+// cone-tracking values
+double cone_timeout = 1.0;
+double cone_speed = 0.4;
+
+// enable/disable for cone mode
+bool track_cones = false;
+
+// planner active
+bool active = true;
 
 // types, to make life easier
 struct loc {
@@ -218,6 +227,7 @@ loc arc_end(loc start, double r, double l) {
 #define dist(a, b) hypot(a.x - b.x, a.y - b.y)
 
 ros::Publisher path_pub;
+ros::Publisher done_pub;
 
 enum pstate {
    BACKING, FORWARD, CONE
@@ -248,9 +258,8 @@ path plan_path(loc start, loc end) {
          */
    path p;
    double d = dist(start, end);
-   // TODO: add enable/disable switch for cone tracking
    // TODO: don't go into cone tracking immediately on startup
-   if( d < cone_dist && planner_state == FORWARD ) {
+   if( track_cones && d < cone_dist && planner_state == FORWARD ) {
       planner_state = CONE;
       planner_timeout = ros::Time::now();
       ROS_INFO("Starting cone tracking");
@@ -297,14 +306,15 @@ path plan_path(loc start, loc end) {
                   ROS_INFO("Cone right");
                }
                */
-            if( (ros::Time::now() - cone_time).toSec() < 2.0 ) {
-               p.speed = min_speed * 4.0;
+            p.speed = cone_speed;
+            if( (ros::Time::now() - cone_time).toSec() < cone_timeout ) {
                p.radius = (p.speed / (cone * 1.4));
             } else {
                ROS_INFO("No cones");
-               // if we don't see any cones, drive in circles
-               p.speed = min_speed * 4.0;
-               p.radius = min_radius;
+               // if we don't see any cones, drive in spirals
+               //  a figure-8 pattern is probably best, but it's also hard
+               p.radius = min_radius + 
+                  (2.0*cone_timeout)/(ros::Time::now() - cone_time).toSec();
             }
             
             // if we hit the cone, back up and keep going
@@ -314,20 +324,33 @@ path plan_path(loc start, loc end) {
                p.speed = 0;
                p.radius = 0;
                ROS_INFO("Cone hit");
+               active = false;
+               std_msgs::Bool res;
+               res.data = true;
+               done_pub.publish(res);
             }
             if( planner_timeout + ros::Duration(60.0) < ros::Time::now() ) {
                planner_state = FORWARD;
                p.speed = 0;
                p.radius = 0;
                ROS_INFO("Cone tracking timed out");
+               active = false;
+               std_msgs::Bool res;
+               res.data = false;
+               done_pub.publish(res);
             }
          }
          break;
       case FORWARD:
          // don't plan if we're at the goal
-         if( dist(start, end) < goal_err ) {
+         if( d < goal_err ) {
             p.speed = 0;
             p.radius = 0;
+            ROS_INFO("Goal reached");
+            active = false;
+            std_msgs::Bool res;
+            res.data = true;
+            done_pub.publish(res);
             break;
          }
          double theta = atan2(end.y - start.y, end.x - start.x);
@@ -461,13 +484,13 @@ ros::Publisher cmd_pub;
 // publisher for map
 ros::Publisher map_pub;
 
-bool active = true;
 bool path_valid = false;
 loc goal;
 
 void goalCallback(const geometry_msgs::Point::ConstPtr & msg) {
    goal.x = msg->x;
    goal.y = msg->y;
+   active = true;
 }
 
 // the last location we were at.
@@ -691,6 +714,9 @@ void reconfigureCb(path_planner::PathPlannerConfig & config,
    max_accel            = config.max_accel;
    backup_time          = config.backup_time;
    stuck_timeout        = config.stuck_timeout;
+   cone_timeout         = config.cone_timeout;
+   cone_speed           = config.cone_speed;
+   track_cones          = config.track_cones;
 }
 
 void bumpCb(const std_msgs::Bool::ConstPtr & msg ) {
@@ -731,6 +757,7 @@ int main(int argc, char ** argv) {
    cmd_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
    map_pub = n.advertise<nav_msgs::OccupancyGrid>("map", 1);
    path_pub = n.advertise<nav_msgs::Path>("path", 10);
+   done_pub = n.advertise<std_msgs::Bool>("goal_reached", 1);
 
    dynamic_reconfigure::Server<path_planner::PathPlannerConfig> server;
    server.setCallback(boost::bind(&reconfigureCb, _1, _2));
