@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+import roslib
+roslib.load_manifest('cone_finder')
+import time, shelve, sys, os, os.path
+import numpy as np
+import matplotlib
+matplotlib.use('GTK')
+from matplotlib import pyplot as plt
+from scipy import linalg
+import cv
+import gobject
+import gtk
+from cone_finder import training_gui
+
+training_dir = sys.argv[1]
+training_img = sys.argv[2]
+
+gui = training_gui.TrainingGuiHSV(training_dir, w=2)
+img = cv.LoadImageM(training_img)
+gui.plot_image(img)
+
+plt.show()

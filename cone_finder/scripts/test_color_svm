@@ -1,0 +1,47 @@
+#!/usr/bin/env python
+import roslib
+roslib.load_manifest('cone_finder')
+import time, shelve, sys, os, os.path
+import numpy as np
+import matplotlib
+matplotlib.use('GTK')
+from matplotlib import pyplot as plt
+from scipy import linalg
+from sklearn import svm
+import cv, cv_bridge
+import gobject
+import gtk
+from cone_finder import color_classifier
+from cone_finder import blob
+
+training_dir = sys.argv[1]
+training_img = sys.argv[2]
+clf = color_classifier.ColorClassifier(training_dir)
+
+img = cv.LoadImageM(training_img)
+class_arr = clf.classify(img)
+if not class_arr == None:
+    blobs = blob.get_blobs(class_arr)
+    plt.figure()
+
+    # sort blobs by size
+    blobs = sorted(blobs, key=lambda b: b.get_area(), reverse=True)
+    # draw blob contours
+    blob.draw_blobs(blobs)
+
+    if len(blobs) < 1:
+        print 'No blobs found'
+    else:
+        b_largest = blobs[0]
+        x, y = b_largest.get_center()
+        plt.plot([x], [y], 'mo')
+
+    # draw blob centers
+    for b in blobs:
+        x, y = b.get_center()
+        plt.plot([x], [y], 'mx')
+
+    plt.imshow(class_arr)
+
+plt.show()
+

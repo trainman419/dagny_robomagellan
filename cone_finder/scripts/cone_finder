@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+import roslib
+roslib.load_manifest('cone_finder')
+import time, shelve, sys, os, os.path
+import numpy as np
+from scipy import linalg
+import cv
+from cv_bridge import CvBridge, CvBridgeError
+from sensor_msgs.msg import Image
+from std_msgs.msg import Float32
+from cone_finder import blob
+from cone_finder import hsv_thresholder
+import rospy
+
+def clamp(x, xmin, xmax):
+    if x < xmin:
+        x = xmin
+    elif x > xmax:
+        x = xmax
+    return x
+
+def image_callback(msg):
+    # convert to opencv image
+    try:
+        img = bridge.imgmsg_to_cv(msg, 'bgr8')
+    except CvBridgeError, e:
+        print e
+
+    # classify image pixels
+    #class_arr = clf.classify(img)
+    class_arr = hsv_thresholder.classify(img, 90, 170, 140, 255)
+
+    # find blobs
+    blobs = blob.get_blobs(class_arr)
+
+
+    x, y = None, None
+    if len(blobs) < 1:
+        rospy.loginfo('No blobs found')
+        return
+    else:
+        # sort blobs by size
+        blobs = sorted(blobs, key=lambda b: b.get_area(), reverse=True)
+
+        b_largest = blobs[0]
+        area = b_largest.get_area()
+        rospy.loginfo('Largest blob area: %d' % area)
+        if area < 500:
+            rospy.loginfo('Biggest blob to small (%d pixels)' % area)
+        else:
+            x, y = b_largest.get_center()
+            # make sure center is in the image
+            x = clamp(x, 0, class_arr.shape[1])
+            y = clamp(y, 0, class_arr.shape[0])
+
+            rospy.loginfo('Found blob at %d, %d' % (x, y))
+            
+            v = np.dot(K_inv, np.array([x, y, 1.]))
+            vx, vy = v[:2] / v[2]
+            rospy.loginfo('Blob world coords: %.2f, %.2f' % (vx, vy))
+            a = np.arctan2(-vx, 1.0)
+            rospy.loginfo('Blob angle: %.2f'  % a)
+
+            cone_angle_pub.publish(Float32(a))
+
+    if publish_cone_mask:
+        mask_mat = cv.fromarray(class_arr*255)
+        if not None in [x, y]:
+            mask_mat[y,x] = 128,
+        mask_msg = bridge.cv_to_imgmsg(mask_mat, "mono8")
+        cone_mask_pub.publish(mask_msg)
+
+publish_cone_mask = True
+training_dir = roslib.packages.get_pkg_subdir(
+    'cone_finder', 'training_data/cone')
+print 'Loading training data from', training_dir
+
+K = np.array([
+    [367.6, 0, 163.25],
+    [0, 368.3, 45.59],
+    [0, 0, 1]], dtype=np.float)
+K_inv = linalg.inv(K)
+
+bridge = CvBridge()
+
+# create color classier
+# (to slow on dagny)
+#clf = color_classifier.ColorClassifier(training_dir)
+
+rospy.init_node('cone_finder')
+image_sub = rospy.Subscriber('/top_cam/image_raw', Image, image_callback)
+cone_mask_pub = rospy.Publisher('/top_cam/cone_mask', Image)
+cone_angle_pub = rospy.Publisher('/top_cam/cone_angle', Float32)
+rospy.spin()
+
+
