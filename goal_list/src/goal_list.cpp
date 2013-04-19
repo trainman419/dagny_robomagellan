@@ -14,6 +14,7 @@
 
 #include <geometry_msgs/Point.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <std_msgs/Bool.h>
 
 #include <dagny_driver/Goal.h>
 
@@ -37,6 +38,21 @@ bool active = false;
 void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
    //ROS_INFO("Got position update");
    last_odom = msg->pose.pose.position;
+}
+
+void goalReachedCallback(const std_msgs::Bool::ConstPtr & msg) {
+   // we've reached the goal. switch to the next goal.
+   ROS_INFO("Goal Reached");
+   ++current_goal;
+   if( current_goal >= goals->size() ) {
+      if( loop ) {
+         current_goal = 0;
+         ROS_INFO("Last goal. Looping around");
+      } else {
+         active = false;
+         ROS_INFO("Last goal. Deactivating");
+      }
+   }
 }
 
 void sendCurrentGoalUpdate() {
@@ -125,24 +141,8 @@ void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
       goal.x = last_odom.x + d * cos(heading);
       goal.y = last_odom.y + d * sin(heading);
 
-
-      // if we're close enough to goal, swtich to next goal
-      if( d < GOAL_TOLERANCE ) {
-         ROS_INFO("Goal Reached");
-         ++current_goal;
-         if( current_goal >= goals->size() ) {
-            if( loop ) {
-               current_goal = 0;
-               ROS_INFO("Last goal. Looping around");
-               // TODO: convert new goal to odom frame
-            } else {
-               active = false;
-               ROS_INFO("Last goal. Deactivating");
-            }
-         }
-      }
+      goal_pub.publish(goal);
    }
-   goal_pub.publish(goal);
 }
 
 int main(int argc, char ** argv) {
@@ -186,7 +186,11 @@ int main(int argc, char ** argv) {
 
    ros::Subscriber odom = n.subscribe("odom", 2, odomCallback);
    ros::Subscriber gps = n.subscribe("gps", 2, gpsCallback);
-   ros::Subscriber goal_input = n.subscribe("goal_input", 10, goalInputCallback);
+   ros::Subscriber goal_input = n.subscribe("goal_input", 10,
+         goalInputCallback);
+   ros::Subscriber goal_reached = n.subscribe("goal_reached", 1, 
+         goalReachedCallback);
+
    goal_pub = n.advertise<geometry_msgs::Point>("current_goal", 10);
    goal_update_pub = n.advertise<dagny_driver::Goal>("goal_updates", 10);
 
