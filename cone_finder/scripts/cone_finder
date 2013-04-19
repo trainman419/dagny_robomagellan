@@ -37,7 +37,6 @@ def image_callback(msg):
     x, y = None, None
     if len(blobs) < 1:
         rospy.loginfo('No blobs found')
-        return
     else:
         # sort blobs by size
         blobs = sorted(blobs, key=lambda b: b.get_area(), reverse=True)
@@ -45,7 +44,7 @@ def image_callback(msg):
         b_largest = blobs[0]
         area = b_largest.get_area()
         rospy.loginfo('Largest blob area: %d' % area)
-        if area < 500:
+        if area < 400:
             rospy.loginfo('Biggest blob to small (%d pixels)' % area)
         else:
             x, y = b_largest.get_center()
