@@ -43,6 +43,7 @@
 #include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/Float32.h>
 #include <visualization_msgs/Marker.h>
 
 #include <dynamic_reconfigure/server.h>
@@ -228,6 +229,9 @@ ros::Time planner_timeout;
 
 visualization_msgs::Marker cones;
 
+float cone;
+ros::Time cone_time;
+
 bool bump = false;
 
 
@@ -264,6 +268,7 @@ path plan_path(loc start, loc end) {
       case CONE:
          {
             // find nearest cone
+            /*
             if( cones.points.size() > 0 ) {
                geometry_msgs::Point cone = cones.points.front();
                double cone_d = hypot(cone.x - start.x, cone.y - start.y);
@@ -291,6 +296,10 @@ path plan_path(loc start, loc end) {
                   p.radius = -min_radius;
                   ROS_INFO("Cone right");
                }
+               */
+            if( (ros::Time::now() - cone_time).toSec() < 2.0 ) {
+               p.speed = min_speed * 4.0;
+               p.radius = (p.speed / (cone * 1.4));
             } else {
                ROS_INFO("No cones");
                // if we don't see any cones, drive in circles
@@ -315,6 +324,12 @@ path plan_path(loc start, loc end) {
          }
          break;
       case FORWARD:
+         // don't plan if we're at the goal
+         if( dist(start, end) < goal_err ) {
+            p.speed = 0;
+            p.radius = 0;
+            break;
+         }
          double theta = atan2(end.y - start.y, end.x - start.x);
          //ROS_INFO("Angle to goal: %lf", theta);
 
@@ -496,6 +511,8 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
 
       //ROS_INFO("Target radius: %lf, angular: %lf", radius, cmd.angular.z);
 
+      cmd.linear.x = speed;
+      /*
       if( dist(here, goal) > goal_err ) {
          //ROS_INFO("Target speed: %lf", speed);
          cmd.linear.x = speed;
@@ -503,6 +520,7 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
          cmd.linear.x = 0;
          cmd.angular.z = 0;
       }
+      */
       cmd_pub.publish(cmd);
    } else {
       geometry_msgs::Twist cmd;
@@ -683,6 +701,11 @@ void conesCb(const visualization_msgs::Marker::ConstPtr & msg ) {
    cones = *msg;
 }
 
+void visionCb(const std_msgs::Float32::ConstPtr & msg ) {
+   cone_time = ros::Time::now();
+   cone = msg->data;
+}
+
 int main(int argc, char ** argv) {
    map_data = (map_type*)malloc(MAP_SIZE * MAP_SIZE * sizeof(map_type));
    // set map to empty
@@ -702,6 +725,8 @@ int main(int argc, char ** argv) {
    ros::Subscriber laser_sub = n.subscribe("scan", 2, laserCallback);
    ros::Subscriber bump_sub = n.subscribe("bump", 2, bumpCb);
    ros::Subscriber cones_sub = n.subscribe("cone_markers", 2, conesCb);
+
+   ros::Subscriber vision_sub = n.subscribe("top_cam/cone_angle", 2, visionCb);
 
    cmd_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
    map_pub = n.advertise<nav_msgs::OccupancyGrid>("map", 1);
