@@ -15,7 +15,7 @@
 #include <geometry_msgs/Point.h>
 #include <sensor_msgs/NavSatFix.h>
 
-#include <hardware_interface/Goal.h>
+#include <dagny_driver/Goal.h>
 
 #include <nav_msgs/Odometry.h>
 
@@ -40,21 +40,21 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
 }
 
 void sendCurrentGoalUpdate() {
-   hardware_interface::Goal g;
-   g.operation = hardware_interface::Goal::SET_CURRENT;
+   dagny_driver::Goal g;
+   g.operation = dagny_driver::Goal::SET_CURRENT;
    g.id = current_goal;
    goal_update_pub.publish(g);
 }
 
-void goalInputCallback(const hardware_interface::Goal::ConstPtr & goal) {
+void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
    switch(goal->operation) {
-      case hardware_interface::Goal::APPEND:
+      case dagny_driver::Goal::APPEND:
          goals->push_back(goal->goal);
          // re-activate if we're inactive
          active = true;
          sendCurrentGoalUpdate();
          break;
-      case hardware_interface::Goal::DELETE:
+      case dagny_driver::Goal::DELETE:
          {
             ROS_INFO("Removing goal at %d", goal->id);
 
@@ -188,7 +188,7 @@ int main(int argc, char ** argv) {
    ros::Subscriber gps = n.subscribe("gps", 2, gpsCallback);
    ros::Subscriber goal_input = n.subscribe("goal_input", 10, goalInputCallback);
    goal_pub = n.advertise<geometry_msgs::Point>("current_goal", 10);
-   goal_update_pub = n.advertise<hardware_interface::Goal>("goal_updates", 10);
+   goal_update_pub = n.advertise<dagny_driver::Goal>("goal_updates", 10);
 
    ROS_INFO("Goal List ready");
 
