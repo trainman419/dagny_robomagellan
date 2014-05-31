@@ -1,23 +1,27 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+# Catkin User Guide: http://www.ros.org/doc/groovy/api/catkin/html/user_guide/user_guide.html
+# Catkin CMake Standard: http://www.ros.org/doc/groovy/api/catkin/html/user_guide/standards.html
+cmake_minimum_required(VERSION 2.8.3)
+project(cone_detector)
+# Load catkin and all dependencies required for this package
+find_package(catkin REQUIRED COMPONENTS
+  dynamic_reconfigure
+  geometry_msgs
+  roscpp
+  sensor_msgs
+  tf
+  visualization_msgs
+  )
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+generate_dynamic_reconfigure_options(
+  cfg/ConeDetector.cfg
+  )
 
-rosbuild_init()
+catkin_package(
+  CATKIN_DEPENDS roscpp geometry_msgs sensor_msgs visualization_msgs dynamic_reconfigure tf
+)
 
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+include_directories(${catkin_INCLUDE_DIRS})
 
-rosbuild_find_ros_package(dynamic_reconfigure)
-include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
-gencfg()
-
-rosbuild_add_executable(cone_detector src/cone_detector.cpp)
+add_executable(cone_detector src/cone_detector.cpp)
+add_dependencies(cone_detector ${PROJECT_NAME}_gencfg)
+target_link_libraries(cone_detector ${catkin_LIBRARIES})
