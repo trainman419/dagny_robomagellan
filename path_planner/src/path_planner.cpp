@@ -54,7 +54,8 @@ using namespace std;
 // minimum turning radius (m)
 double min_radius = 0.695;
 // maximum planned radius (m)
-double max_radius = 10.0;
+//double max_radius = 10.0;
+double max_radius = 4.0;
 // how close we want to get to our goal before we're "there" (m)
 double goal_err = 0.3;
 // how close we are before we switch to cone mode (m)
@@ -76,7 +77,8 @@ double planner_lookahead = 4.0;
 double max_accel = 0.3;
 
 // planner timeouts
-double backup_time = 6.0;
+double backup_time = 10.0;
+double backup_dist = 1.0;
 double stuck_timeout = 2.0;
 
 // cone-tracking values
@@ -87,7 +89,7 @@ double cone_speed = 0.4;
 bool track_cones = false;
 
 // planner active
-bool active = true;
+bool active = false;
 
 // types, to make life easier
 struct loc {
@@ -236,6 +238,7 @@ enum pstate {
 pstate planner_state;
 
 ros::Time planner_timeout;
+loc backup_pose;
 
 visualization_msgs::Marker cones;
 
@@ -244,6 +247,7 @@ ros::Time cone_time;
 
 bool bump = false;
 
+loc pattern_center;
 
 /* plan a path from start to end
  *  TODO: find a clear path all the way to the edge of the map or the goal, 
@@ -261,6 +265,7 @@ path plan_path(loc start, loc end) {
    // TODO: don't go into cone tracking immediately on startup
    if( track_cones && d < cone_dist && planner_state == FORWARD ) {
       planner_state = CONE;
+      pattern_center = start;
       planner_timeout = ros::Time::now();
       ROS_INFO("Starting cone tracking");
    }
@@ -272,6 +277,10 @@ path plan_path(loc start, loc end) {
          if( (ros::Time::now() - planner_timeout).toSec() > backup_time ) {
             planner_state = FORWARD;
             planner_timeout.sec = 0;
+         }
+         if( dist(start, backup_pose) > backup_dist ) {
+            planner_state = FORWARD;
+            planner_timeout.sec = 0; // TODO: figure out if we still need to reset this here.
          }
          break;
       case CONE:
@@ -313,18 +322,54 @@ path plan_path(loc start, loc end) {
                ROS_INFO("No cones");
                // if we don't see any cones, drive in spirals
                //  a figure-8 pattern is probably best, but it's also hard
+
+               p.radius = 2.0;
+               /*
                p.radius = min_radius + 
                   (2.0*cone_timeout)/(ros::Time::now() - cone_time).toSec();
+                  */
+               /*
+               p.radius = 0;
+               double dx = start.x - pattern_center.x;
+               //double dy = start.y - pattern_center.y;
+               double search_radius = 2.0;
+               if( dx > search_radius*sqrt(0.5) ) {
+                  ROS_INFO("Figure 8: right of center");
+                  // turn right
+                  if( start.pose < M_PI/2.0 || start.pose > 3.0*M_PI/4.0 ) {
+                     ROS_INFO("Figure 8: turning right");
+                     p.radius = -search_radius;
+                  } else {
+                     ROS_INFO("Figure 8: turning left");
+                     p.radius = search_radius;
+                  }
+               } else if( dx < -search_radius*sqrt(0.5) ) {
+                  ROS_INFO("Figure 8: left of center");
+                  // turn left
+                  if( start.pose > M_PI/2.0 || start.pose < M_PI/4.0 ) {
+                     ROS_INFO("Figure 8: turning left");
+                     p.radius = search_radius;
+                  } else {
+                     ROS_INFO("Figure 8: turning right");
+                     p.radius = -search_radius;
+                  }
+               } else {
+                  ROS_INFO("Figure 8: within X region");
+               }
+               */
             }
             
             // if we hit the cone, back up and keep going
             if( bump ) {
                planner_timeout = ros::Time::now();
+               backup_pose = start;
                planner_state = BACKING;
                p.speed = 0;
                p.radius = 0;
+
                ROS_INFO("Cone hit");
                active = false;
+
                std_msgs::Bool res;
                res.data = true;
                done_pub.publish(res);
@@ -333,8 +378,10 @@ path plan_path(loc start, loc end) {
                planner_state = FORWARD;
                p.speed = 0;
                p.radius = 0;
+
                ROS_INFO("Cone tracking timed out");
                active = false;
+
                std_msgs::Bool res;
                res.data = false;
                done_pub.publish(res);
@@ -390,7 +437,7 @@ path plan_path(loc start, loc end) {
 
          // if our turn radius is below our minimum radius, go straight
          if( fabs(radius) < min_radius ) {
-            //ROS_INFO("Tangent arc radius too small; looping around. %lf", radius);
+            ROS_INFO("Tangent arc radius too small; looping around. %lf", radius);
             radius = 0;
             // we should go forward by our minimum radius, and then loop around
             arc_len = min_radius;
@@ -431,6 +478,7 @@ path plan_path(loc start, loc end) {
                   if( (ros::Time::now() -  planner_timeout).toSec() > 
                         stuck_timeout ) {
                      planner_state = BACKING;
+                     backup_pose = start;
                      planner_timeout = ros::Time::now();
                      ROS_WARN("Robot stuck; backing up");
                   }
@@ -514,12 +562,21 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
       path p = plan_path(here, goal);
       double radius = p.radius;
       double speed = p.speed;
+      double current_speed = msg->twist.twist.linear.x;
 
       // limit acceleration
       if( speed > 0 ) {
-         speed = min(speed, msg->twist.twist.linear.x + max_accel);
+         if( current_speed > 0 ) {
+            speed = min(speed, current_speed + max_accel);
+         } else {
+            speed = max_accel;
+         }
       } else if( speed < 0 ) {
-         speed = max(speed, msg->twist.twist.linear.x - max_accel);
+         if( current_speed < 0 ) {
+            speed = max(speed, current_speed - max_accel);
+         } else {
+            speed = -max_accel;
+         }
       }
       // no limit on deceleration
 
@@ -535,9 +592,9 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
       //ROS_INFO("Target radius: %lf, angular: %lf", radius, cmd.angular.z);
 
       cmd.linear.x = speed;
+      ROS_INFO("Target speed: %lf", speed);
       /*
       if( dist(here, goal) > goal_err ) {
-         //ROS_INFO("Target speed: %lf", speed);
          cmd.linear.x = speed;
       } else {
          cmd.linear.x = 0;
@@ -712,11 +769,13 @@ void reconfigureCb(path_planner::PathPlannerConfig & config,
    min_speed            = config.min_speed;
    planner_lookahead    = config.planner_lookahead;
    max_accel            = config.max_accel;
-   backup_time          = config.backup_time;
+   backup_dist          = config.backup_dist;
    stuck_timeout        = config.stuck_timeout;
    cone_timeout         = config.cone_timeout;
    cone_speed           = config.cone_speed;
    track_cones          = config.track_cones;
+   min_radius           = config.min_radius;
+   max_radius           = config.max_radius;
 }
 
 void bumpCb(const std_msgs::Bool::ConstPtr & msg ) {

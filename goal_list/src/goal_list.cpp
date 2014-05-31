@@ -45,7 +45,7 @@ void goalReachedCallback(const std_msgs::Bool::ConstPtr & msg) {
    ROS_INFO("Goal Reached");
    ++current_goal;
    if( current_goal >= goals->size() ) {
-      if( loop ) {
+      if( loop && goals->size() > 0 ) {
          current_goal = 0;
          ROS_INFO("Last goal. Looping around");
       } else {
@@ -66,6 +66,9 @@ void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
    switch(goal->operation) {
       case dagny_driver::Goal::APPEND:
          goals->push_back(goal->goal);
+         if( current_goal >= goals->size() ) {
+            current_goal = goals->size() - 1;
+         }
          // re-activate if we're inactive
          active = true;
          sendCurrentGoalUpdate();
