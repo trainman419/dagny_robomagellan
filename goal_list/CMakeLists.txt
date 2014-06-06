@@ -14,7 +14,10 @@ catkin_package(
   CATKIN_DEPENDS roscpp rospy std_msgs nav_msgs sensor_msgs dagny_driver
 )
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} include)
 
-add_executable(goal_list src/goal_list.cpp)
+add_executable(goal_list src/goal_list.cpp src/gps.cpp)
 target_link_libraries(goal_list ${catkin_LIBRARIES})
+
+add_executable(goal_test src/test.cpp src/gps.cpp)
+target_link_libraries(goal_test ${catkin_LIBRARIES})

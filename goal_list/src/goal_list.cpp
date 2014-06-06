@@ -20,6 +20,8 @@
 
 #include <nav_msgs/Odometry.h>
 
+#include <goal_list/gps.h>
+
 using namespace std;
 
 vector<sensor_msgs::NavSatFix> * goals;
@@ -100,49 +102,26 @@ void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
    }
 }
 
-// Radius of earth in m
-#define R 6371000
-
-// Goal Tolerance
-//  TODO: convert to parameter shared with path planner
-#define GOAL_TOLERANCE 5.0
 
 void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
    geometry_msgs::Point goal = last_odom; // goal, in odom frame
    if( active ) {
       sensor_msgs::NavSatFix gps_goal = goals->at(current_goal);
 
+      segment diff = gpsDist(*msg, gps_goal);
+
       // use last_odom as the position in the odom frame that corresponds to
       // this GPS location
-      double start_lat, start_lon, end_lat, end_lon;
-      start_lat = msg->latitude / 180.0 * M_PI;
-      start_lon = msg->longitude / 180.0 * M_PI;
-      end_lat = gps_goal.latitude / 180.0 * M_PI;
-      end_lon = gps_goal.longitude / 180.0 * M_PI;
-
-      // Haversine formula (http://www.movable-type.co.uk/scripts/latlong.html)
-      double delta_lat = end_lat - start_lat;
-      double delta_lon = end_lon - start_lon;
-      double a = sin(delta_lat/2.0)*sin(delta_lat/2.0) + 
-         cos(start_lat)*cos(end_lat)*sin(delta_lon/2.0)*sin(delta_lon/2);
-      double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-      double d = R * c; // distance to goal
-
-
-      // Bearing formula (from above)
-      //  expressed as radians east of North
-      double theta = atan2( sin(delta_lon)*cos(end_lat),
-            cos(start_lat)*sin(end_lat) - 
-            sin(start_lat)*cos(end_lat)*cos(delta_lon));
 
       // convert to radians North of East
-      double heading = (M_PI / 2.0) - theta;
+      double heading = (M_PI / 2.0) - diff.heading;
 
-      ROS_INFO("Goal %d: distance %lf, heading %lf", current_goal, d, heading);
+      ROS_INFO("Goal %d: distance %lf, heading %lf", current_goal, diff.distance,
+               heading);
 
       // no need to normalize heading
-      goal.x = last_odom.x + d * cos(heading);
-      goal.y = last_odom.y + d * sin(heading);
+      goal.x = last_odom.x + diff.distance * cos(heading);
+      goal.y = last_odom.y + diff.distance * sin(heading);
 
       goal_pub.publish(goal);
    }
@@ -181,7 +160,7 @@ int main(int argc, char ** argv) {
          }
       }
    }
-   ROS_INFO("Loaded %d goals", goals->size());
+   ROS_INFO("Loaded %zd goals", goals->size());
 
    active = goals->size() > 0;
    n.getParam("loop", loop);
