@@ -20,8 +20,8 @@ if __name__ == '__main__':
          # assume that our reading was taken at start, and has some error
          # start = gps + offset
          # offset = start - gps
-         lat_offset = start[0] - gps.latitude
-         lon_offset = start[1] - gps.longitude
+         lat_offset = gps.latitude  - start[0]
+         lon_offset = gps.longitude - start[1]
          rospy.logwarn("GPS offset %f %f"%(lat_offset, lon_offset))
          goals = []
          for g in goals_rel:
