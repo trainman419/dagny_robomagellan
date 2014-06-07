@@ -45,6 +45,7 @@
 #include <std_msgs/Bool.h>
 #include <std_msgs/Float32.h>
 #include <visualization_msgs/Marker.h>
+#include <geometry_msgs/PointStamped.h>
 
 #include <dynamic_reconfigure/server.h>
 #include <path_planner/PathPlannerConfig.h>
@@ -535,9 +536,9 @@ ros::Publisher map_pub;
 bool path_valid = false;
 loc goal;
 
-void goalCallback(const geometry_msgs::Point::ConstPtr & msg) {
-   goal.x = msg->x;
-   goal.y = msg->y;
+void goalCallback(const geometry_msgs::PointStamped::ConstPtr & msg) {
+   goal.x = msg->point.x;
+   goal.y = msg->point.y;
    active = true;
 }
 

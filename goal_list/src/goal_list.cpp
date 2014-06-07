@@ -13,6 +13,7 @@
 #include <ros/ros.h>
 
 #include <geometry_msgs/Point.h>
+#include <geometry_msgs/PointStamped.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Bool.h>
 
@@ -104,7 +105,7 @@ void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
 
 
 void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
-   geometry_msgs::Point goal = last_odom; // goal, in odom frame
+   geometry_msgs::PointStamped goal; // goal, in odom frame
    if( active ) {
       sensor_msgs::NavSatFix gps_goal = goals->at(current_goal);
 
@@ -120,8 +121,12 @@ void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
                heading);
 
       // no need to normalize heading
-      goal.x = last_odom.x + diff.distance * cos(heading);
-      goal.y = last_odom.y + diff.distance * sin(heading);
+      goal.point.x = last_odom.x + diff.distance * cos(heading);
+      goal.point.y = last_odom.y + diff.distance * sin(heading);
+      goal.point.z = 0.0;
+
+      goal.header.frame_id = "odom";
+      goal.header.stamp = ros::Time::now();
 
       goal_pub.publish(goal);
    }
@@ -173,7 +178,7 @@ int main(int argc, char ** argv) {
    ros::Subscriber goal_reached = n.subscribe("goal_reached", 1, 
          goalReachedCallback);
 
-   goal_pub = n.advertise<geometry_msgs::Point>("current_goal", 10);
+   goal_pub = n.advertise<geometry_msgs::PointStamped>("current_goal", 10);
    goal_update_pub = n.advertise<dagny_driver::Goal>("goal_updates", 10);
 
    ROS_INFO("Goal List ready");
