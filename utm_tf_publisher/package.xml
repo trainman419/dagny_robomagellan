@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package>
+  <name>utm_tf_publisher</name>
+  <version>0.0.0</version>
+  <description>The utm_tf_publisher package</description>
+
+  <maintainer email="namniart@gmail.com">Austin Hendrix</maintainer>
+
+  <license>BSD</license>
+
+
+  <author>Austin Hendrix</author>
+
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>geodesy</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+
+  <run_depend>geodesy</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+
+</package>
