@@ -37,8 +37,11 @@
 // See: https://github.com/ros-visualization/rviz/issues/502
 
 #include <ros/ros.h>
+#include <std_msgs/Float32.h>
+#include <std_msgs/Header.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
+#include <tf/transform_datatypes.h>
 
 #include <geodesy/wgs84.h>
 #include <geodesy/utm.h>
@@ -48,11 +51,14 @@ class NavSatTfPub {
     NavSatTfPub();
 
   private:
+    void compassCallback(const std_msgs::Float32::ConstPtr & msg);
     void fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg);
+    void publish(const std_msgs::Header & header);
 
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
     ros::Subscriber fix_sub_;
+    ros::Subscriber compass_sub_;
     ros::Publisher odom_pub_;
 
     geodesy::UTMPoint initial_point_;
@@ -64,15 +70,39 @@ class NavSatTfPub {
 
     std::string child_frame_id_;
     bool override_child_frame_id_;
+
+    double yaw_;
+    double compass_var_;
+
+    std::string gps_frame_id_;
+    geodesy::UTMPoint current_point_;
+    double gps_cov_[9];
 };
 
-NavSatTfPub::NavSatTfPub() : pnh_("~"), initial_point_valid_(false) {
+NavSatTfPub::NavSatTfPub() : pnh_("~"), initial_point_valid_(false), yaw_(0.0) {
   fix_sub_ = nh_.subscribe("fix", 10, &NavSatTfPub::fixCallback, this);
   odom_pub_ = nh_.advertise<nav_msgs::Odometry>("odom", 10);
   pnh_.param<bool>("relative", relative_, false);
 
   override_frame_id_ = pnh_.getParam("frame_id", frame_id_);
   pnh_.param<std::string>("child_frame_id", child_frame_id_, "base_link");
+
+  std::string compass_topic;
+  if( pnh_.getParam("compass_topic", compass_topic) ) {
+    ROS_INFO("Subscribing to %s for heading data", compass_topic.c_str());
+    compass_sub_ = nh_.subscribe(compass_topic, 10,
+        &NavSatTfPub::compassCallback, this);
+
+    pnh_.param<double>("compass_variance", compass_var_, 0.1);
+  }
+}
+
+void NavSatTfPub::compassCallback(const std_msgs::Float32::ConstPtr & msg) {
+  yaw_ = msg->data;
+  std_msgs::Header fake_header;
+  fake_header.stamp = ros::Time::now();
+  fake_header.frame_id = frame_id_;
+  publish(fake_header);
 }
 
 void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
@@ -95,26 +125,35 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
       // TODO: do something more clever here...
     }
   }
+  current_point_ = utm_point;
 
+  for( int i=0; i<9; i++ ) {
+    gps_cov_[i] = msg->position_covariance[i];
+  }
+
+  gps_frame_id_ = msg->header.frame_id;
+  publish(msg->header);
+}
+
+void NavSatTfPub::publish(const std_msgs::Header & header) {
   nav_msgs::Odometry odom;
-  odom.header = msg->header;
+  odom.header.frame_id = header.frame_id;
+  odom.header.stamp    = header.stamp;
   if(override_frame_id_) {
     odom.header.frame_id = frame_id_;
   }
   odom.child_frame_id = child_frame_id_;
-  odom.pose.pose.position.x = utm_point.easting;
-  odom.pose.pose.position.y = utm_point.northing;
-  odom.pose.pose.position.z = utm_point.altitude;
+  odom.pose.pose.position.x = current_point_.easting;
+  odom.pose.pose.position.y = current_point_.northing;
+  odom.pose.pose.position.z = current_point_.altitude;
 
-  odom.pose.pose.orientation.x = 0;
-  odom.pose.pose.orientation.y = 0;
-  odom.pose.pose.orientation.z = 0;
-  odom.pose.pose.orientation.w = 1;
+  odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw_);
   for( int i=0; i<3; i++ ) {
     for(int j=0; j<3; j++ ) {
-      odom.pose.covariance[i*6+j] = msg->position_covariance[i*3+j];
+      odom.pose.covariance[i*6+j] = gps_cov_[i*3+j];
     }
   }
+  odom.pose.covariance[35] = compass_var_;
   odom_pub_.publish(odom);
 }
 
