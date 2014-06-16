@@ -39,6 +39,7 @@
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Header.h>
+#include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
@@ -52,13 +53,17 @@ class NavSatTfPub {
 
   private:
     void compassCallback(const std_msgs::Float32::ConstPtr & msg);
+    void imuCallback(const sensor_msgs::Imu::ConstPtr & msg);
     void fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg);
     void publish(const std_msgs::Header & header);
 
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
+
     ros::Subscriber fix_sub_;
+    ros::Subscriber imu_sub_;
     ros::Subscriber compass_sub_;
+
     ros::Publisher odom_pub_;
 
     geodesy::UTMPoint initial_point_;
@@ -71,34 +76,76 @@ class NavSatTfPub {
     std::string child_frame_id_;
     bool override_child_frame_id_;
 
-    double yaw_;
-    double compass_var_;
+    geometry_msgs::Quaternion heading_;
+    double heading_cov_[9];
 
     std::string gps_frame_id_;
     geodesy::UTMPoint current_point_;
     double gps_cov_[9];
+
+    bool fix_hdop_;
 };
 
-NavSatTfPub::NavSatTfPub() : pnh_("~"), initial_point_valid_(false), yaw_(0.0) {
+NavSatTfPub::NavSatTfPub() 
+  : pnh_("~"),
+    initial_point_valid_(false)
+{
+  heading_.w = 1.0;
+
   fix_sub_ = nh_.subscribe("fix", 10, &NavSatTfPub::fixCallback, this);
   odom_pub_ = nh_.advertise<nav_msgs::Odometry>("odom", 10);
   pnh_.param<bool>("relative", relative_, false);
+  pnh_.param<bool>("fix_hdop", fix_hdop_, false);
 
   override_frame_id_ = pnh_.getParam("frame_id", frame_id_);
   pnh_.param<std::string>("child_frame_id", child_frame_id_, "base_link");
 
+  bool have_compass = false;
   std::string compass_topic;
   if( pnh_.getParam("compass_topic", compass_topic) ) {
     ROS_INFO("Subscribing to %s for heading data", compass_topic.c_str());
     compass_sub_ = nh_.subscribe(compass_topic, 10,
         &NavSatTfPub::compassCallback, this);
 
-    pnh_.param<double>("compass_variance", compass_var_, 0.1);
+    double compass_var;
+    pnh_.param<double>("compass_variance", compass_var, 0.1);
+    for( int i=0; i<8; i++ ) {
+      heading_cov_[i] = 0.0;
+    }
+    heading_cov_[9] = compass_var;
+    have_compass = true;
+  }
+
+  bool have_imu = false;
+  std::string imu_topic;
+  if( pnh_.getParam("imu_topic", imu_topic) ) {
+    ROS_ASSERT(!have_compass);
+    ROS_INFO("Subscribing to %s for imu orientation data", imu_topic.c_str());
+    imu_sub_ = nh_.subscribe(imu_topic, 10,
+        &NavSatTfPub::imuCallback, this);
+    have_imu = true;
+  }
+
+  if( !have_compass && !have_imu ) {
+    ROS_WARN("No compass or IMU topic provided for orientation. "
+        "Orientation will be set to 0. "
+        "This probably will not work well with sensor fusion.");
   }
 }
 
 void NavSatTfPub::compassCallback(const std_msgs::Float32::ConstPtr & msg) {
-  yaw_ = msg->data;
+  heading_ = tf::createQuaternionMsgFromYaw(msg->data);
+  std_msgs::Header fake_header;
+  fake_header.stamp = ros::Time::now();
+  fake_header.frame_id = frame_id_;
+  publish(fake_header);
+}
+
+void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
+  heading_ = msg->orientation;
+  for( int i=0; i<9; i++ ) {
+    heading_cov_[i] = msg->orientation_covariance[i];
+  }
   std_msgs::Header fake_header;
   fake_header.stamp = ros::Time::now();
   fake_header.frame_id = frame_id_;
@@ -123,12 +170,31 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
     } else {
       ROS_ERROR("Initial UTM zone and current zone are not the same!");
       // TODO: do something more clever here...
+      // this is always bad data when I see it, so just ignore it
+      return;
     }
   }
   current_point_ = utm_point;
 
-  for( int i=0; i<9; i++ ) {
-    gps_cov_[i] = msg->position_covariance[i];
+  if( fix_hdop_ ) {
+    for( int i=0; i<3; i++ ) {
+      double v = msg->position_covariance[i*4];
+      v = sqrt(v);
+      const double A = 3.0;
+      const double B = 4.0;
+      v = A * v;
+      v = sqrt( v*v + B*B );
+      gps_cov_[i*4] = v;
+    }
+    for( int i=0; i<9; i++ ) {
+      if( i%4 != 0 ) {
+        gps_cov_[i] = 0.0;
+      }
+    }
+  } else {
+    for( int i=0; i<9; i++ ) {
+      gps_cov_[i] = msg->position_covariance[i];
+    }
   }
 
   gps_frame_id_ = msg->header.frame_id;
@@ -147,13 +213,16 @@ void NavSatTfPub::publish(const std_msgs::Header & header) {
   odom.pose.pose.position.y = current_point_.northing;
   odom.pose.pose.position.z = current_point_.altitude;
 
-  odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw_);
+  odom.pose.pose.orientation = heading_;
   for( int i=0; i<3; i++ ) {
     for(int j=0; j<3; j++ ) {
+      // copy in gps covariance
       odom.pose.covariance[i*6+j] = gps_cov_[i*3+j];
+
+      // copy in heading covariance
+      odom.pose.covariance[(i+3)*6 + (j+3)] = heading_cov_[i*3+j];
     }
   }
-  odom.pose.covariance[35] = compass_var_;
   odom_pub_.publish(odom);
 }
 
