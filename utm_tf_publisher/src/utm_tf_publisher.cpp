@@ -183,7 +183,7 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
       const double A = 3.0;
       const double B = 4.0;
       v = A * v;
-      v = sqrt( v*v + B*B );
+      v = v*v + B*B;
       gps_cov_[i*4] = v;
     }
     for( int i=0; i<9; i++ ) {
