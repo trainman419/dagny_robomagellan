@@ -18,6 +18,8 @@ include_directories(${catkin_INCLUDE_DIRS} include)
 
 add_executable(goal_list src/goal_list.cpp src/gps.cpp)
 target_link_libraries(goal_list ${catkin_LIBRARIES})
+add_dependencies(goal_list ${catkin_EXPORTED_TARGETS})
 
 add_executable(goal_test src/test.cpp src/gps.cpp)
 target_link_libraries(goal_test ${catkin_LIBRARIES})
+add_dependencies(goal_test ${catkin_EXPORTED_TARGETS})

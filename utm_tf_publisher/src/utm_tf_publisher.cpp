@@ -76,9 +76,11 @@ class NavSatTfPub {
     std::string child_frame_id_;
     bool override_child_frame_id_;
 
+    bool heading_valid_;
     geometry_msgs::Quaternion heading_;
     double heading_cov_[9];
 
+    bool gps_valid_;
     std::string gps_frame_id_;
     geodesy::UTMPoint current_point_;
     double gps_cov_[9];
@@ -88,9 +90,14 @@ class NavSatTfPub {
 
 NavSatTfPub::NavSatTfPub() 
   : pnh_("~"),
-    initial_point_valid_(false)
+    initial_point_valid_(false),
+    heading_valid_(false),
+    gps_valid_(false)
 {
   heading_.w = 1.0;
+  current_point_.easting = 0.0;
+  current_point_.northing = 0.0;
+  current_point_.altitude = 0.0;
 
   fix_sub_ = nh_.subscribe("fix", 10, &NavSatTfPub::fixCallback, this);
   odom_pub_ = nh_.advertise<nav_msgs::Odometry>("odom", 10);
@@ -134,6 +141,7 @@ NavSatTfPub::NavSatTfPub()
 }
 
 void NavSatTfPub::compassCallback(const std_msgs::Float32::ConstPtr & msg) {
+  heading_valid_ = true;
   heading_ = tf::createQuaternionMsgFromYaw(msg->data);
   std_msgs::Header fake_header;
   fake_header.stamp = ros::Time::now();
@@ -142,6 +150,7 @@ void NavSatTfPub::compassCallback(const std_msgs::Float32::ConstPtr & msg) {
 }
 
 void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
+  heading_valid_ = true;
   heading_ = msg->orientation;
   for( int i=0; i<9; i++ ) {
     heading_cov_[i] = msg->orientation_covariance[i];
@@ -197,6 +206,7 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
     }
   }
 
+  gps_valid_ = true;
   gps_frame_id_ = msg->header.frame_id;
   publish(msg->header);
 }
@@ -217,10 +227,30 @@ void NavSatTfPub::publish(const std_msgs::Header & header) {
   for( int i=0; i<3; i++ ) {
     for(int j=0; j<3; j++ ) {
       // copy in gps covariance
-      odom.pose.covariance[i*6+j] = gps_cov_[i*3+j];
+      if( gps_valid_ ) {
+        odom.pose.covariance[i*6+j] = gps_cov_[i*3+j];
+      } else {
+        /*
+        if( i == j ) {
+          odom.pose.covariance[i*6+j] = 9999.9;
+        } else {
+        */
+          odom.pose.covariance[i*6+j] = 0;
+        //}
+      }
 
       // copy in heading covariance
-      odom.pose.covariance[(i+3)*6 + (j+3)] = heading_cov_[i*3+j];
+      if( heading_valid_ ) {
+        odom.pose.covariance[(i+3)*6 + (j+3)] = heading_cov_[i*3+j];
+      } else {
+        /*
+        if( i == j ) {
+          odom.pose.covariance[(i+3)*6 + (j+3)] = 9999.9;
+        } else {
+        */
+          odom.pose.covariance[(i+3)*6 + (j+3)] = 0;
+        //}
+      }
     }
   }
   odom_pub_.publish(odom);
