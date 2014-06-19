@@ -40,6 +40,14 @@
 //  publish a utm -> local_utm frame that captures the initial position
 //  publish a local_utm -> gps frame that captures the difference between the
 //  initial position and the current position
+//
+// TODO list:
+//  - now that I'm publishing the utm_local frame, consider removing the
+//    relative_ flag and parameter
+//  - consider removing all of the compass code. it can be handled by a separate
+//    tf publisher or by the Kalman filter
+//  - consider adding a flag to disable publishing the gps frame. when using a
+//    Kalman filter, the robot's position will be estimated by the filter
 
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
@@ -49,6 +57,7 @@
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
 
+#include <geometry_msgs/TransformStamped.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 
@@ -96,6 +105,8 @@ class NavSatTfPub {
     bool fix_hdop_;
 
     // tf2 publishers
+    tf2_ros::StaticTransformBroadcaster utm_local_tf;
+    tf2_ros::TransformBroadcaster gps_tf;
 };
 
 NavSatTfPub::NavSatTfPub() 
@@ -178,6 +189,20 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
   if(!initial_point_valid_) {
     initial_point_ = utm_point;
     initial_point_valid_ = true;
+
+    geometry_msgs::TransformStamped utm_local;
+    utm_local.header.stamp = ros::Time::now();
+    utm_local.header.frame_id = "utm";
+    utm_local.child_frame_id = "utm_local";
+    utm_local.transform.translation.x = initial_point_.easting;
+    utm_local.transform.translation.y = initial_point_.northing;
+    utm_local.transform.translation.z = initial_point_.altitude;
+
+    // zero rotation
+    // we get rotation from the compass, or not at all
+    utm_local.transform.rotation.w = 1.0;
+
+    utm_local_tf.sendTransform(utm_local);
   }
 
   if(relative_) {
@@ -264,6 +289,22 @@ void NavSatTfPub::publish(const std_msgs::Header & header) {
     }
   }
   odom_pub_.publish(odom);
+
+  // publish utm_local to gps transform
+  geometry_msgs::TransformStamped gps;
+  gps.header.stamp = header.stamp;
+  if( relative_ ) {
+    gps.header.frame_id = "utm_local";
+  } else {
+    gps.header.frame_id = "utm";
+  }
+  gps.child_frame_id = "gps";
+  gps.transform.translation.x = odom.pose.pose.position.x;
+  gps.transform.translation.y = odom.pose.pose.position.y;
+  gps.transform.translation.z = odom.pose.pose.position.z;
+  gps.transform.rotation = odom.pose.pose.orientation;
+
+  gps_tf.sendTransform(gps);
 }
 
 int main(int argc, char ** argv) {
