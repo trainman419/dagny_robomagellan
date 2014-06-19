@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   geodesy
   roscpp
   sensor_msgs
+  tf2_ros
 )
 
 catkin_package()

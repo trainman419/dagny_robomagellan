@@ -35,6 +35,11 @@
 // notes: we should publish a utm local frame that is within 1km of our
 // current position in an attempt to make rviz happy.
 // See: https://github.com/ros-visualization/rviz/issues/502
+//
+// Implementation:
+//  publish a utm -> local_utm frame that captures the initial position
+//  publish a local_utm -> gps frame that captures the difference between the
+//  initial position and the current position
 
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
@@ -43,6 +48,9 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
+
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include <geodesy/wgs84.h>
 #include <geodesy/utm.h>
@@ -86,6 +94,8 @@ class NavSatTfPub {
     double gps_cov_[9];
 
     bool fix_hdop_;
+
+    // tf2 publishers
 };
 
 NavSatTfPub::NavSatTfPub() 
