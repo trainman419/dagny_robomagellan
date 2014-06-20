@@ -36,6 +36,8 @@
 
 #include <ros/ros.h>
 #include <tf/tf.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/OccupancyGrid.h>
@@ -98,6 +100,11 @@ struct loc {
    double x;
    double y;
    double pose;
+
+   loc() : x(0.0), y(0.0), pose(0.0) {}
+
+   loc(const geometry_msgs::PointStamped &point) :
+     x(point.point.x), y(point.point.y), pose(0.0) {}
 };
 
 struct path {
@@ -534,12 +541,15 @@ ros::Publisher cmd_pub;
 ros::Publisher map_pub;
 
 bool path_valid = false;
-loc goal;
+geometry_msgs::PointStamped goal_msg;
+
+// frame transform bits. Keep track of the position frame id and the
+// tf2 buffer
+tf2_ros::Buffer tf2_buffer;
 
 void goalCallback(const geometry_msgs::PointStamped::ConstPtr & msg) {
-   goal.x = msg->point.x;
-   goal.y = msg->point.y;
-   active = true;
+  goal_msg = *msg;
+  active = true;
 }
 
 // the last location we were at.
@@ -547,7 +557,7 @@ void goalCallback(const geometry_msgs::PointStamped::ConstPtr & msg) {
 loc last_loc;
 geometry_msgs::Pose last_pose;
    
-void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
+void positionCallback(const nav_msgs::Odometry::ConstPtr & msg) {
    loc here;
    here.x = msg->pose.pose.position.x;
    here.y = msg->pose.pose.position.y;
@@ -555,10 +565,27 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
 
    last_loc = here;
    last_pose = msg->pose.pose;
+   std::string pose_frame = msg->header.frame_id;
+
+   if( pose_frame != goal_msg.header.frame_id ) {
+     geometry_msgs::PointStamped tmp_goal;
+     std::string tf_err;
+     if( tf2_buffer.canTransform(pose_frame, goal_msg.header.frame_id,
+           goal_msg.header.stamp, &tf_err) ) {
+       tf2_buffer.transform(goal_msg, tmp_goal, pose_frame);
+       goal_msg = tmp_goal;
+     } else {
+       ROS_ERROR("Cannot transform goal from %s frame to %s frame: %s",
+           goal_msg.header.frame_id.c_str(), pose_frame.c_str(),
+           tf_err.c_str());
+       return;
+     }
+   }
+
+   loc goal(goal_msg);
+
    if( active ) {
       geometry_msgs::Twist cmd;
-
-      //ROS_INFO("Current angle: %lf", here.pose);
 
       path p = plan_path(here, goal);
       double radius = p.radius;
@@ -805,8 +832,11 @@ int main(int argc, char ** argv) {
 
    ros::NodeHandle n;
 
+   // set up tf2 transform listener
+   tf2_ros::TransformListener tf2_listener(tf2_buffer);
+
    // subscribe to our location and current goal
-   ros::Subscriber odom_sub = n.subscribe("odom", 2, odomCallback);
+   ros::Subscriber odom_sub = n.subscribe("position", 2, positionCallback);
    ros::Subscriber goal_sub = n.subscribe("current_goal", 2, goalCallback);
    ros::Subscriber laser_sub = n.subscribe("scan", 2, laserCallback);
    ros::Subscriber bump_sub = n.subscribe("bump", 2, bumpCb);

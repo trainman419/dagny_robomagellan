@@ -11,34 +11,28 @@
 
   <author>Austin Hendrix</author>
 
-  <!-- Dependencies which this package needs to build itself. -->
   <buildtool_depend>catkin</buildtool_depend>
 
-  <!-- Dependencies needed to compile this package. -->
   <build_depend>roscpp</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>visualization_msgs</build_depend>
   <build_depend>std_msgs</build_depend>
   <build_depend>tf</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>tf2_ros</build_depend>
   <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>orocos_kdl</build_depend>
 
-  <!-- Dependencies needed after this package is compiled. -->
   <run_depend>roscpp</run_depend>
   <run_depend>nav_msgs</run_depend>
   <run_depend>sensor_msgs</run_depend>
   <run_depend>visualization_msgs</run_depend>
   <run_depend>std_msgs</run_depend>
   <run_depend>tf</run_depend>
+  <run_depend>tf2_geometry_msgs</run_depend>
+  <run_depend>tf2_ros</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
-
-  <!-- Dependencies needed only for running tests. -->
-  <!-- <test_depend>roscpp</test_depend> -->
-  <!-- <test_depend>nav_msgs</test_depend> -->
-  <!-- <test_depend>sensor_msgs</test_depend> -->
-  <!-- <test_depend>visualization_msgs</test_depend> -->
-  <!-- <test_depend>std_msgs</test_depend> -->
-  <!-- <test_depend>tf</test_depend> -->
-  <!-- <test_depend>dynamic_reconfigure</test_depend> -->
+  <run_depend>orocos_kdl</run_depend>
 
 </package>
