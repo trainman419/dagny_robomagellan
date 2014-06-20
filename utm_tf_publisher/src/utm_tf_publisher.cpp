@@ -72,7 +72,7 @@ class NavSatTfPub {
     void compassCallback(const std_msgs::Float32::ConstPtr & msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr & msg);
     void fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg);
-    void publish(const std_msgs::Header & header);
+    void publish(const ros::Time & header);
 
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
@@ -126,7 +126,7 @@ NavSatTfPub::NavSatTfPub()
   pnh_.param<bool>("fix_hdop", fix_hdop_, false);
 
   override_frame_id_ = pnh_.getParam("frame_id", frame_id_);
-  pnh_.param<std::string>("child_frame_id", child_frame_id_, "base_link");
+  pnh_.param<std::string>("child_frame_id", child_frame_id_, "gps");
 
   bool have_compass = false;
   std::string compass_topic;
@@ -164,10 +164,7 @@ NavSatTfPub::NavSatTfPub()
 void NavSatTfPub::compassCallback(const std_msgs::Float32::ConstPtr & msg) {
   heading_valid_ = true;
   heading_ = tf::createQuaternionMsgFromYaw(msg->data);
-  std_msgs::Header fake_header;
-  fake_header.stamp = ros::Time::now();
-  fake_header.frame_id = frame_id_;
-  publish(fake_header);
+  publish(ros::Time::now());
 }
 
 void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
@@ -176,10 +173,7 @@ void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
   for( int i=0; i<9; i++ ) {
     heading_cov_[i] = msg->orientation_covariance[i];
   }
-  std_msgs::Header fake_header;
-  fake_header.stamp = ros::Time::now();
-  fake_header.frame_id = frame_id_;
-  publish(fake_header);
+  publish(ros::Time::now());
 }
 
 void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
@@ -243,13 +237,19 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
 
   gps_valid_ = true;
   gps_frame_id_ = msg->header.frame_id;
-  publish(msg->header);
+  publish(msg->header.stamp);
 }
 
-void NavSatTfPub::publish(const std_msgs::Header & header) {
+void NavSatTfPub::publish(const ros::Time & stamp) {
   nav_msgs::Odometry odom;
-  odom.header.frame_id = header.frame_id;
-  odom.header.stamp    = header.stamp;
+  std::string frame;
+  if( relative_ ) {
+    frame = "utm_local";
+  } else {
+    frame = "utm";
+  }
+  odom.header.frame_id = frame;
+  odom.header.stamp    = stamp;
   if(override_frame_id_) {
     odom.header.frame_id = frame_id_;
   }
@@ -292,13 +292,9 @@ void NavSatTfPub::publish(const std_msgs::Header & header) {
 
   // publish utm_local to gps transform
   geometry_msgs::TransformStamped gps;
-  gps.header.stamp = header.stamp;
-  if( relative_ ) {
-    gps.header.frame_id = "utm_local";
-  } else {
-    gps.header.frame_id = "utm";
-  }
-  gps.child_frame_id = "gps";
+  gps.header.frame_id = frame;
+  gps.header.stamp = stamp;
+  gps.child_frame_id = child_frame_id_;
   gps.transform.translation.x = odom.pose.pose.position.x;
   gps.transform.translation.y = odom.pose.pose.position.y;
   gps.transform.translation.z = odom.pose.pose.position.z;

@@ -94,6 +94,8 @@ bool track_cones = false;
 // planner active
 bool active = false;
 
+std::string position_frame;
+
 // types, to make life easier
 struct loc {
    // x, y, pose: the position and direction of the robot
@@ -181,7 +183,7 @@ bool test_arc(loc start, double r, double l) {
 
 nav_msgs::Path arcToPath(loc start, double r, double l) {
    nav_msgs::Path p;
-   p.header.frame_id = "odom";
+   p.header.frame_id = position_frame;
    if( r != 0.0 ) {
       // normal case; traverse an arc
       double center_x, center_y, theta;
@@ -194,7 +196,7 @@ nav_msgs::Path arcToPath(loc start, double r, double l) {
          double x = r * cos(theta + dist / r) + center_x;
          double y = r * sin(theta + dist / r) + center_y;
          geometry_msgs::PoseStamped pose;
-         pose.header.frame_id = "odom";
+         pose.header.frame_id = position_frame;
          pose.pose.position.x = x;
          pose.pose.position.y = y;
          p.poses.push_back(pose);
@@ -204,7 +206,7 @@ nav_msgs::Path arcToPath(loc start, double r, double l) {
       // degenerate case; traverse a line
       for( double dist = 0; dist < l; dist += MAP_RES/2.0 ) {
          geometry_msgs::PoseStamped pose;
-         pose.header.frame_id = "odom";
+         pose.header.frame_id = position_frame;
          pose.pose.position.x = start.x + dist*cos(start.pose);
          pose.pose.position.y = start.y + dist*sin(start.pose);
          p.poses.push_back(pose);
@@ -566,6 +568,7 @@ void positionCallback(const nav_msgs::Odometry::ConstPtr & msg) {
    last_loc = here;
    last_pose = msg->pose.pose;
    std::string pose_frame = msg->header.frame_id;
+   position_frame = pose_frame;
 
    if( pose_frame != goal_msg.header.frame_id ) {
      geometry_msgs::PointStamped tmp_goal;
