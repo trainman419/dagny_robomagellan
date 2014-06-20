@@ -15,9 +15,9 @@
  *    coordinates, and then publish goals in the absolute UTM frame?
  *  - Should we try to deal with altitude? Using the geodesy C++ API lets
  *    me handle altitude without too much trouble
- *  - Publishing the initial position to UTM transform from the utm publisher
- *    would be a good use of the tf2 static publisher, and would probably apply
- *    to Junior as well
+ *    Don't bother dealing with altitude. The change in distance between
+ *    sea level and Boulder is about 0.25% - less than my ability to measure
+ *    anyway
  */
 
 #include <stdint.h>
@@ -26,6 +26,9 @@
 #include <vector>
 
 #include <ros/ros.h>
+
+#include <geodesy/wgs84.h>
+#include <geodesy/utm.h>
 
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PointStamped.h>
@@ -49,13 +52,21 @@ bool loop = false;
 ros::Publisher goal_pub;
 ros::Publisher goal_update_pub;
 
-geometry_msgs::Point last_odom;
-   
 bool active = false;
 
-void odomCallback(const nav_msgs::Odometry::ConstPtr & msg) {
-   //ROS_INFO("Got position update");
-   last_odom = msg->pose.pose.position;
+void publishGoal() {
+  // this is a tad inefficient, but it's the least-intrusive change to the
+  // current architecture
+  geographic_msgs::GeoPoint geo_goal = geodesy::toMsg(goals->at(current_goal));
+  geodesy::UTMPoint utm_goal(geo_goal);
+  geometry_msgs::PointStamped goal;
+  goal.header.frame_id = "utm";
+  goal.header.stamp = ros::Time::now();
+  goal.point.x = utm_goal.easting;
+  goal.point.y = utm_goal.northing;
+  goal.point.z = utm_goal.altitude;
+
+  goal_pub.publish(goal);
 }
 
 void goalReachedCallback(const std_msgs::Bool::ConstPtr & msg) {
@@ -66,10 +77,13 @@ void goalReachedCallback(const std_msgs::Bool::ConstPtr & msg) {
       if( loop && goals->size() > 0 ) {
          current_goal = 0;
          ROS_INFO("Last goal. Looping around");
+         publishGoal();
       } else {
          active = false;
          ROS_INFO("Last goal. Deactivating");
       }
+   } else {
+     publishGoal();
    }
 }
 
@@ -88,22 +102,30 @@ void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
             current_goal = goals->size() - 1;
          }
          // re-activate if we're inactive
-         active = true;
+         if(!active) {
+           active = true;
+           publishGoal();
+         }
          sendCurrentGoalUpdate();
          break;
       case dagny_driver::Goal::DELETE:
          {
+            const int id = goal->id;
+            if( id < 0 || id >= goals->size() ) {
+              ROS_ERROR("Invalid goal id %d", id);
+              return;
+            }
+
             ROS_INFO("Removing goal at %d", goal->id);
 
             vector<sensor_msgs::NavSatFix>::iterator itr = goals->begin();
-            int id = goal->id;
-            while( id ) {
-               ++itr;
-               id--;
-            }
-            goals->erase(itr);
-            if( current_goal > goal->id )
+            goals->erase(itr + id);
+            if( current_goal == id ) {
+               publishGoal();
+            } else if( current_goal > id ) {
                current_goal--;
+            }
+
             if( goals->size() > 0 ) {
                sendCurrentGoalUpdate();
             } else {
@@ -115,35 +137,6 @@ void goalInputCallback(const dagny_driver::Goal::ConstPtr & goal) {
       default:
          ROS_ERROR("Unimplemented goal list operation: %d", goal->operation);
          break;
-   }
-}
-
-
-void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
-   geometry_msgs::PointStamped goal; // goal, in odom frame
-   if( active ) {
-      sensor_msgs::NavSatFix gps_goal = goals->at(current_goal);
-
-      segment diff = gpsDist(*msg, gps_goal);
-
-      // use last_odom as the position in the odom frame that corresponds to
-      // this GPS location
-
-      // convert to radians North of East
-      double heading = (M_PI / 2.0) - diff.heading;
-
-      ROS_INFO("Goal %d: distance %lf, heading %lf", current_goal, diff.distance,
-               heading);
-
-      // no need to normalize heading
-      goal.point.x = last_odom.x + diff.distance * cos(heading);
-      goal.point.y = last_odom.y + diff.distance * sin(heading);
-      goal.point.z = 0.0;
-
-      goal.header.frame_id = "odom";
-      goal.header.stamp = ros::Time::now();
-
-      goal_pub.publish(goal);
    }
 }
 
@@ -185,16 +178,18 @@ int main(int argc, char ** argv) {
    active = goals->size() > 0;
    n.getParam("loop", loop);
 
-
-   ros::Subscriber odom = n.subscribe("odom", 2, odomCallback);
-   ros::Subscriber gps = n.subscribe("gps", 2, gpsCallback);
    ros::Subscriber goal_input = n.subscribe("goal_input", 10,
          goalInputCallback);
    ros::Subscriber goal_reached = n.subscribe("goal_reached", 1, 
          goalReachedCallback);
 
-   goal_pub = n.advertise<geometry_msgs::PointStamped>("current_goal", 10);
+   // latched - we publish one message, and only send updates when we get a
+   // message on goal_reached
+   goal_pub = n.advertise<geometry_msgs::PointStamped>("current_goal", 10,
+       true);
    goal_update_pub = n.advertise<dagny_driver::Goal>("goal_updates", 10);
+
+   if( active ) publishGoal();
 
    ROS_INFO("Goal List ready");
 
