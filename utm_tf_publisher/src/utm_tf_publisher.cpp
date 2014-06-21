@@ -179,6 +179,7 @@ void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
 void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
   geographic_msgs::GeoPoint geo_point = geodesy::toMsg(*msg);
   geodesy::UTMPoint utm_point(geo_point);
+  utm_point.altitude = 0.0; // no altitude
 
   if(!initial_point_valid_) {
     initial_point_ = utm_point;
@@ -190,7 +191,7 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
     utm_local.child_frame_id = "utm_local";
     utm_local.transform.translation.x = initial_point_.easting;
     utm_local.transform.translation.y = initial_point_.northing;
-    utm_local.transform.translation.z = initial_point_.altitude;
+    utm_local.transform.translation.z = 0.0; // initial_point_.altitude;
 
     // zero rotation
     // we get rotation from the compass, or not at all
@@ -202,7 +203,7 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
   if(relative_) {
     if(utm_point.zone == initial_point_.zone
         && utm_point.band == initial_point_.band) {
-      utm_point.altitude -= initial_point_.altitude;
+      //utm_point.altitude -= initial_point_.altitude;
       utm_point.northing -= initial_point_.northing;
       utm_point.easting  -= initial_point_.easting;
     } else {
