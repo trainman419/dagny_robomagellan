@@ -75,4 +75,9 @@ mission = {
         'loop': True
         }
 
-print yaml.dump(mission)
+if len(sys.argv) > 2:
+    yamlfile = sys.argv[2]
+    with open(yamlfile, 'w') as f:
+        f.write(yaml.dump(mission))
+else:
+    print yaml.dump(mission)
