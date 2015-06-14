@@ -240,6 +240,7 @@ loc arc_end(loc start, double r, double l) {
 
 ros::Publisher path_pub;
 ros::Publisher done_pub;
+ros::Time done_time;
 
 enum pstate {
    BACKING, FORWARD, CONE
@@ -407,7 +408,10 @@ path plan_path(loc start, loc end) {
             active = false;
             std_msgs::Bool res;
             res.data = true;
-            done_pub.publish(res);
+            if( (ros::Time::now() - done_time).toSec() > 0.5 ) {
+               done_time = ros::Time::now();
+               done_pub.publish(res);
+            }
             break;
          }
          double theta = atan2(end.y - start.y, end.x - start.x);
