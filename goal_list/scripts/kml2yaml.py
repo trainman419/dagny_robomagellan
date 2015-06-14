@@ -49,14 +49,24 @@ if len(placemarks) == 1:
     print "Found 1 placemark. Using it"
     placemark = placemarks[0]
 else:
-    print "TODO: select placemark from list"
-    print [ p.get_name() for p in placemarks ]
-    sys.exit(1)
+    print "Select placemark:"
+    for i,p in enumerate(placemarks):
+        print " %3d: %s" % (i+1, p.get_name())
+    pos = 0
+    while pos < 1 or pos > len(placemarks):
+        pos = raw_input("# ")
+        try:
+            pos = int(pos)
+        except:
+            pass
+    placemark = placemarks[pos-1]
+    print "Selected %s"%(placemark.get_name())
 
 geometry = placemark.get_geometry()
 
 coordinates = []
 
+coords = None
 if geometry.Type() == kmldom.Type_Polygon:
     poly = kmldom.AsPolygon(geometry)
     bound = poly.get_outerboundaryis()
@@ -64,11 +74,17 @@ if geometry.Type() == kmldom.Type_Polygon:
         ring = bound.get_linearring()
         if ring.has_coordinates():
             coords = ring.get_coordinates()
-            for i in range(coords.get_coordinates_array_size()):
-                vec = coords.get_coordinates_array_at(i)
-                coordinates.append( [vec.get_latitude(), vec.get_longitude()] )
+elif geometry.Type() == kmldom.Type_LineString:
+    line = kmldom.AsLineString(geometry)
+    if line.has_coordinates():
+        coords = line.get_coordinates()
 else:
     print "Unknown placemark geometry type", geometry.Type()
+
+if coords:
+    for i in range(coords.get_coordinates_array_size()):
+        vec = coords.get_coordinates_array_at(i)
+        coordinates.append( [vec.get_latitude(), vec.get_longitude()] )
 
 mission = {
         'goals': coordinates,
