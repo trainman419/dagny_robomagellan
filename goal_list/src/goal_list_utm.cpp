@@ -71,7 +71,7 @@ void publishGoal() {
 
 void goalReachedCallback(const std_msgs::Bool::ConstPtr & msg) {
    // we've reached the goal. switch to the next goal.
-   ROS_INFO("Goal Reached");
+   ROS_INFO("Goal %d reached", current_goal);
    ++current_goal;
    if( current_goal >= goals->size() ) {
       if( loop && goals->size() > 0 ) {
