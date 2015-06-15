@@ -82,6 +82,7 @@ double max_accel = 0.3;
 // planner timeouts
 double backup_time = 10.0;
 double backup_dist = 1.0;
+double backup_radius = 0.0;
 double stuck_timeout = 2.0;
 
 // cone-tracking values
@@ -284,7 +285,7 @@ path plan_path(loc start, loc end) {
    switch(planner_state) {
       case BACKING:
          p.speed = -2.0 * min_speed;
-         p.radius = 0;
+         p.radius = backup_radius;
          if( (ros::Time::now() - planner_timeout).toSec() > backup_time ) {
             planner_state = FORWARD;
             planner_timeout.sec = 0;
@@ -492,6 +493,11 @@ path plan_path(loc start, loc end) {
                   if( (ros::Time::now() -  planner_timeout).toSec() > 
                         stuck_timeout ) {
                      planner_state = BACKING;
+                     if( alpha > 0 ) {
+                        backup_radius = -min_radius;
+                     } else {
+                        backup_radius = min_radius;
+                     }
                      backup_pose = start;
                      planner_timeout = ros::Time::now();
                      ROS_WARN("Robot stuck; backing up");
