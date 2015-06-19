@@ -53,7 +53,7 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Header.h>
 #include <sensor_msgs/Imu.h>
-#include <sensor_msgs/NavSatFix.h>
+#include <dagny_driver/NavSatFix.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
 
@@ -64,6 +64,12 @@
 #include <geodesy/wgs84.h>
 #include <geodesy/utm.h>
 
+sensor_msgs::NavSatFix toStdNavSat(const dagny_driver::NavSatFix & msg) {
+  sensor_msgs::NavSatFix result;
+
+  return result;
+}
+
 class NavSatTfPub {
   public:
     NavSatTfPub();
@@ -71,7 +77,7 @@ class NavSatTfPub {
   private:
     void compassCallback(const std_msgs::Float32::ConstPtr & msg);
     void imuCallback(const sensor_msgs::Imu::ConstPtr & msg);
-    void fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg);
+    void fixCallback(const dagny_driver::NavSatFix & msg);
     void publish(const ros::Time & header);
 
     ros::NodeHandle nh_;
@@ -176,8 +182,8 @@ void NavSatTfPub::imuCallback(const sensor_msgs::Imu::ConstPtr & msg) {
   publish(ros::Time::now());
 }
 
-void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
-  geographic_msgs::GeoPoint geo_point = geodesy::toMsg(*msg);
+void NavSatTfPub::fixCallback(const dagny_driver::NavSatFix & msg) {
+  geographic_msgs::GeoPoint geo_point = geodesy::toMsg(toStdNavSat(msg));
   geodesy::UTMPoint utm_point(geo_point);
   utm_point.altitude = 0.0; // no altitude
 
@@ -217,7 +223,7 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
 
   if( fix_hdop_ ) {
     for( int i=0; i<3; i++ ) {
-      double v = msg->position_covariance[i*4];
+      double v = msg.position_covariance[i*4];
       v = sqrt(v);
       const double A = 3.0;
       const double B = 4.0;
@@ -232,13 +238,34 @@ void NavSatTfPub::fixCallback(const sensor_msgs::NavSatFix::ConstPtr & msg) {
     }
   } else {
     for( int i=0; i<9; i++ ) {
-      gps_cov_[i] = msg->position_covariance[i];
+      gps_cov_[i] = msg.position_covariance[i];
     }
   }
 
+  // course and speed (convert course from NED to ENU)
+  heading_valid_ = true;
+  heading_ = tf::createQuaternionMsgFromYaw((M_PI/2) - msg.course);
+
+  // set up orientation covariance matrix from course variance
+  heading_cov_[0] = M_PI*M_PI; // high variance on roll
+  heading_cov_[1] = 0;
+  heading_cov_[2] = 0;
+
+  heading_cov_[3] = 0;
+  heading_cov_[4] = M_PI*M_PI; // high variance on pitch
+  heading_cov_[5] = 0;
+
+  heading_cov_[6] = 0;
+  heading_cov_[7] = 0;
+  heading_cov_[8] = msg.course_var; // GPS-specified variance on yaw
+
+  // TODO: speed
+  // TODO: I think the speed reported by the odometry is good enough that
+  //       we don't need to include or use the speed here
+
   gps_valid_ = true;
-  gps_frame_id_ = msg->header.frame_id;
-  publish(msg->header.stamp);
+  gps_frame_id_ = msg.header.frame_id;
+  publish(msg.header.stamp);
 }
 
 void NavSatTfPub::publish(const ros::Time & stamp) {

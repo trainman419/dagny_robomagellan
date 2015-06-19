@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   tf2_ros
+  dagny_driver
 )
 
 catkin_package()
