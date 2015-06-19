@@ -67,6 +67,14 @@
 sensor_msgs::NavSatFix toStdNavSat(const dagny_driver::NavSatFix & msg) {
   sensor_msgs::NavSatFix result;
 
+  result.header                   = msg.header;
+  result.status                   = msg.status;
+  result.latitude                 = msg.latitude;
+  result.longitude                = msg.longitude;
+  result.altitude                 = msg.altitude;
+  result.position_covariance      = msg.position_covariance;
+  result.position_covariance_type = msg.position_covariance_type;
+
   return result;
 }
 
